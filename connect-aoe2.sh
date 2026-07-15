@@ -620,30 +620,59 @@ get_launcher
 # --- Patch launcher config when steam:// handler is broken ---
 # The launcher uses xdg-open for BOTH 'auto' and 'steam' on Linux (see
 # base/base_linux.go StartUri). When xdg-open silently fails (common on
-# Mint/Ubuntu), we create a wrapper that calls Steam's binary directly.
+# Mint/Ubuntu where 'gio' doesn't support steam:// URIs), we create a
+# wrapper that calls the Steam binary directly AND set Client.Path to
+# the game directory (required by the custom executor).
 if [ "$STEAM_URL_BROKEN" -eq 1 ] && command -v steam >/dev/null 2>&1; then
   STEAM_CONFIG="$LAUNCHER_DIR/resources/config.age2.toml"
-  if [ -f "$STEAM_CONFIG" ] && grep -qE "^Executable *= *'(auto|steam)'$" "$STEAM_CONFIG"; then
-    info "steam:// handler is broken, switching to direct Steam launch..."
+  if [ ! -f "$STEAM_CONFIG" ]; then
+    warn "Config file not found: $STEAM_CONFIG"
+  else
     STEAM_BIN=$(command -v steam)
     STEAM_WRAPPER="$LAUNCHER_DIR/steam-launcher.sh"
+    GAME_PATH=$(find_game_path)
+    NEEDS_PATCH=0
 
-    cat > "$STEAM_WRAPPER" <<SCRIPTEOF
+    # If Executable is still 'auto' or 'steam', we need the full patch
+    if grep -qE "^Executable *= *'(auto|steam)'$" "$STEAM_CONFIG"; then
+      NEEDS_PATCH=1
+    # If Executable was already patched but Path is still 'auto', fix it
+    elif grep -qE "^Path *= *'auto'$" "$STEAM_CONFIG"; then
+      NEEDS_PATCH=1
+    fi
+
+    if [ "$NEEDS_PATCH" -eq 1 ]; then
+      info "steam:// handler is broken (gio doesn't support steam://),"
+      info "switching to direct Steam launch..."
+
+      cat > "$STEAM_WRAPPER" <<SCRIPTEOF
 #!/bin/bash
 # Wrapper created by connect-aoe2.sh — launches AoE2 DE via
 # native Steam binary instead of xdg-open steam:// (which
-# silently fails on this system).
+# silently fails on this system because gio/gvfs doesn't
+# support the steam:// URI scheme).
 exec "$STEAM_BIN" -applaunch $STEAM_APPID
 SCRIPTEOF
-    chmod +x "$STEAM_WRAPPER"
+      chmod +x "$STEAM_WRAPPER"
 
-    cp "$STEAM_CONFIG" "$STEAM_CONFIG.bak"
-    sed -i "/^\[Client\]\$/,/^\[/{
-      s|^Executable = .*|Executable = '$STEAM_WRAPPER'|
-      s|^ExecutableArgs *= *\[.*\]\$|ExecutableArgs = []|
-    }" "$STEAM_CONFIG"
-    ok "Config patched: Client.Executable = steam-launcher.sh"
-    hint "This wrapper runs: $STEAM_BIN -applaunch $STEAM_APPID"
+      cp "$STEAM_CONFIG" "$STEAM_CONFIG.bak"
+      if [ -n "$GAME_PATH" ]; then
+        sed -i "/^\[Client\]\$/,/^\[/{
+          s|^Executable = .*|Executable = '$STEAM_WRAPPER'|
+          s|^ExecutableArgs *= *\[.*\]\$|ExecutableArgs = []|
+          s|^Path = .*|Path = '$GAME_PATH'|
+        }" "$STEAM_CONFIG"
+        ok "Config patched: Executable=wrapper, Path=$GAME_PATH"
+      else
+        warn "Game path not found, patch may fail."
+        sed -i "/^\[Client\]\$/,/^\[/{
+          s|^Executable = .*|Executable = '$STEAM_WRAPPER'|
+          s|^ExecutableArgs *= *\[.*\]\$|ExecutableArgs = []|
+        }" "$STEAM_CONFIG"
+        ok "Config patched: Executable=wrapper (Path not set — game not found)"
+      fi
+      hint "This wrapper runs: $STEAM_BIN -applaunch $STEAM_APPID"
+    fi
   fi
 fi
 
