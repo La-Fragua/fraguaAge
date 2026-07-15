@@ -370,7 +370,10 @@ info "You may be asked for your password (to edit /etc/hosts and trust the cert)
 cd "$LAUNCHER_DIR"
 
 set +e
-./launcher -e "$GAME" -s "$SERVER_IP" --log
+# -a false: do NOT auto-discover. Discovery on this host picks a Docker-internal
+# 192.168.139.x address (unreachable by the game). Forcing serverStart=false makes
+# the launcher connect to and inject exactly -s ($SERVER_IP), the reachable IP.
+./launcher -e "$GAME" -a false -s "$SERVER_IP" --log
 rc=$?
 set -e
 
