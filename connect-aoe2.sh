@@ -72,7 +72,7 @@ die()  { printf '%serror:%s %s\n' "$c_err" "$c_off" "$*" >&2; exit 1; }
 tcp_open() { timeout 5 bash -c ":</dev/tcp/$1/$2" >/dev/null 2>&1; }
 
 lan_subnet() {
-  local ip
+  local ip=""
   # Only try route lookup for IPs, skip domains (DNS+route is slow)
   if echo "$SERVER_IP" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'; then
     ip=$(ip route get "$SERVER_IP" 2>/dev/null | grep -oE 'src [0-9.]+' | awk '{print $2}' | head -1)
