@@ -631,43 +631,30 @@ if [ "$STEAM_URL_BROKEN" -eq 1 ] && command -v steam >/dev/null 2>&1; then
     STEAM_BIN=$(command -v steam)
     STEAM_WRAPPER="$LAUNCHER_DIR/steam-launcher.sh"
     GAME_PATH=$(find_game_path)
-    NEEDS_PATCH=0
 
-    # If Executable is still 'auto' or 'steam', we need the full patch
-    if grep -qE "^Executable *= *'(auto|steam)'$" "$STEAM_CONFIG"; then
-      NEEDS_PATCH=1
-    # If Executable was already patched but Path is still 'auto', fix it
-    elif grep -qE "^Path *= *'auto'$" "$STEAM_CONFIG"; then
-      NEEDS_PATCH=1
-    fi
+    # Always regenerate the wrapper (it may have changed between script versions)
+    info "steam:// handler is broken (gio doesn't support steam://),"
+    info "switching to direct Steam launch..."
 
-    if [ "$NEEDS_PATCH" -eq 1 ]; then
-      info "steam:// handler is broken (gio doesn't support steam://),"
-      info "switching to direct Steam launch..."
-
-      cat > "$STEAM_WRAPPER" <<SCRIPTEOF
+    cat > "$STEAM_WRAPPER" <<SCRIPTEOF
 #!/bin/bash
 # Wrapper created by connect-aoe2.sh — launches AoE2 DE when
 # xdg-open/gio fails to handle steam:// URIs.
 #
-# Tries: steam URI, steam -applaunch, then Proton direct.
-set -euo pipefail
-
+# Tries: steam URI, then Proton direct.
 APPID=$STEAM_APPID
 STEAM=$STEAM_BIN
 GAMEDIR=$GAME_PATH
 
-# Method 1 & 2: steam binary (URI then applaunch)
+# Method 1: steam steam://rungameid/APPID (bypasses xdg-open/gio)
 "\$STEAM" "steam://rungameid/\$APPID" 2>/dev/null && exit 0
-"\$STEAM" -applaunch "\$APPID" 2>/dev/null && exit 0
 
-# Method 3: Proton direct launch
+# Method 2: Proton direct launch (most reliable fallback)
 COMPATDATA="\$HOME/.steam/steam/steamapps/compatdata/\$APPID"
-PROTON=""
 for d in "\$GAMEDIR"/../Proton* "\$HOME/.steam/steam/steamapps/common"/Proton*; do
   [ -d "\$d" ] && [ -f "\$d/proton" ] && PROTON="\$d" && break
 done
-if [ -n "\$PROTON" ] && [ -f "\$GAMEDIR/AoE2DE_s.exe" ]; then
+if [ -n "\${PROTON:-}" ] && [ -f "\$GAMEDIR/AoE2DE_s.exe" ]; then
   STEAM_COMPAT_DATA_PATH="\$COMPATDATA" \
   STEAM_COMPAT_CLIENT_INSTALL_PATH="\$HOME/.steam/steam" \
   "\$PROTON/proton" run "\$GAMEDIR/AoE2DE_s.exe" &
@@ -676,8 +663,12 @@ fi
 
 exit 1
 SCRIPTEOF
-      chmod +x "$STEAM_WRAPPER"
+    chmod +x "$STEAM_WRAPPER"
+    ok "Launch wrapper updated: $STEAM_WRAPPER"
 
+    # Only patch config if needed (first run or missing Path)
+    if grep -qE "^Executable *= *'(auto|steam)'$" "$STEAM_CONFIG" || \
+       grep -qE "^Path *= *'auto'$" "$STEAM_CONFIG"; then
       cp "$STEAM_CONFIG" "$STEAM_CONFIG.bak"
       if [ -n "$GAME_PATH" ]; then
         sed -i "/^\[Client\]\$/,/^\[/{
@@ -686,15 +677,7 @@ SCRIPTEOF
           s|^Path = .*|Path = '$GAME_PATH'|
         }" "$STEAM_CONFIG"
         ok "Config patched: Executable=wrapper, Path=$GAME_PATH"
-      else
-        warn "Game path not found, patch may fail."
-        sed -i "/^\[Client\]\$/,/^\[/{
-          s|^Executable = .*|Executable = '$STEAM_WRAPPER'|
-          s|^ExecutableArgs *= *\[.*\]\$|ExecutableArgs = []|
-        }" "$STEAM_CONFIG"
-        ok "Config patched: Executable=wrapper (Path not set — game not found)"
       fi
-      hint "Wrapper tries: steam URI → steam -applaunch → Proton direct launch"
     fi
   fi
 fi
