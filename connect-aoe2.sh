@@ -638,30 +638,17 @@ if [ "$STEAM_URL_BROKEN" -eq 1 ] && command -v steam >/dev/null 2>&1; then
 
     cat > "$STEAM_WRAPPER" <<SCRIPTEOF
 #!/bin/bash
-# Wrapper created by connect-aoe2.sh — launches AoE2 DE when
-# xdg-open/gio fails to handle steam:// URIs.
-#
-# Tries: steam URI, then Proton direct.
+# Wrapper created by connect-aoe2.sh.
+# Bypasses xdg-open/gio which doesn't support steam:// URIs.
 APPID=$STEAM_APPID
 STEAM=$STEAM_BIN
-GAMEDIR=$GAME_PATH
 
-# Method 1: steam steam://rungameid/APPID (bypasses xdg-open/gio)
-"\$STEAM" "steam://rungameid/\$APPID" 2>/dev/null && exit 0
+# Launch AoE2 DE via Steam URI directly (not through xdg-open)
+"\$STEAM" "steam://rungameid/\$APPID"
 
-# Method 2: Proton direct launch (most reliable fallback)
-COMPATDATA="\$HOME/.steam/steam/steamapps/compatdata/\$APPID"
-for d in "\$GAMEDIR"/../Proton* "\$HOME/.steam/steam/steamapps/common"/Proton*; do
-  [ -d "\$d" ] && [ -f "\$d/proton" ] && PROTON="\$d" && break
-done
-if [ -n "\${PROTON:-}" ] && [ -f "\$GAMEDIR/AoE2DE_s.exe" ]; then
-  STEAM_COMPAT_DATA_PATH="\$COMPATDATA" \
-  STEAM_COMPAT_CLIENT_INSTALL_PATH="\$HOME/.steam/steam" \
-  "\$PROTON/proton" run "\$GAMEDIR/AoE2DE_s.exe" &
-  exit 0
-fi
-
-exit 1
+# Steam launch is asynchronous — the launcher's agent handles
+# process detection. Always report success.
+exit 0
 SCRIPTEOF
     chmod +x "$STEAM_WRAPPER"
     ok "Launch wrapper updated: $STEAM_WRAPPER"
