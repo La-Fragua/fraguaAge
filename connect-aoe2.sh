@@ -614,6 +614,22 @@ if [ "$FAILS" -gt 0 ]; then
 fi
 
 get_launcher
+
+# --- Patch launcher config: prefer native steam over xdg-open ---
+STEAM_CONFIG="$LAUNCHER_DIR/resources/config.age2.toml"
+if [ -f "$STEAM_CONFIG" ] && command -v steam >/dev/null 2>&1; then
+  # Change Client.Executable from 'auto' to 'steam' — this makes the
+  # launcher call the Steam binary directly instead of xdg-open which
+  # silently fails on some systems (especially with Steam Flatpak/Snap
+  # or broken MIME handlers on Mint/Ubuntu).
+  if grep -q "^Executable = 'auto'$" "$STEAM_CONFIG"; then
+    info "Patching launcher config to use native Steam (not xdg-open)..."
+    cp "$STEAM_CONFIG" "$STEAM_CONFIG.bak"
+    sed -i '/^\[Client\]$/,/^\[/{s/^Executable = '\''auto'\''$/Executable = '\''steam'\''/}' "$STEAM_CONFIG"
+    ok "Config patched: Client.Executable = 'steam'"
+  fi
+fi
+
 info "Connecting to AoE2 DE LAN server at $SERVER_IP ..."
 info "A password prompt may appear (to edit hosts + trust the certificate)."
 cd "$LAUNCHER_DIR"
