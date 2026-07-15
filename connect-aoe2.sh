@@ -24,6 +24,8 @@
 #   ./connect-aoe2.sh --fix-cacert      # manually inject the server CA cert
 #                                        #   into the game (workaround for
 #                                        #   "Failed to save CA / exit code 22")
+#   ./connect-aoe2.sh --diagnose-game    # deep dive: scan /proc, test process
+#                                        #   detection, identify Flatpak blocker
 #   SERVER_IP=10.0.0.5 ./connect-aoe2.sh
 #
 set -euo pipefail
@@ -41,11 +43,13 @@ ANNOUNCE_PORT=31978
 
 CHECK_ONLY=0
 FIX_CACERT=0
+DIAGNOSE_GAME=0
 for a in "$@"; do
   case "$a" in
     --check|-c) CHECK_ONLY=1 ;;
     --fix-cacert) FIX_CACERT=1 ;;
-    -h|--help)  sed -n '2,40p' "$0"; exit 0 ;;
+    --diagnose-game) DIAGNOSE_GAME=1 ;;
+    -h|--help)  sed -n '2,42p' "$0"; exit 0 ;;
     -*)         : ;;                              # ignore unknown flags
     *)          SERVER_IP="$a" ;;                 # positional = server IP
   esac
@@ -245,6 +249,146 @@ check_game() {
        hint "In Steam: right-click AoE2 DE > Properties > Compatibility > 'Force Proton', then launch it once normally."; fi
 }
 
+# ---------------------------------------------------------------------------
+# --diagnose-game mode: deep /proc inspection
+# ---------------------------------------------------------------------------
+do_diagnose_game() {
+  info "--- Deep game detection diagnostic ---"
+  echo
+  info "This mode inspects /proc to check if ageLANServer's agent can"
+  info "detect the AoE2 DE game process. Do NOT close this terminal."
+
+  # Detect Steam type and recommend
+  local kind="" game_path="" flatpak_steam="" snap_steam="" native_steam=""
+  command -v steam >/dev/null 2>&1 && native_steam=1
+  flatpak list --app 2>/dev/null | grep -qi 'com.valvesoftware.Steam' && flatpak_steam=1
+  [ -d "$HOME/snap/steam" ] && snap_steam=1
+
+  info "Steam installation type:"
+  [ -n "$native_steam" ] && ok "Native Steam detected"
+  [ -n "$flatpak_steam" ] && warn "Flatpak Steam detected"
+  [ -n "$snap_steam" ] && warn "Snap Steam detected"
+
+  if [ -n "$flatpak_steam" ]; then
+    hint ""
+    hint "Flatpak Steam runs in a SANDBOX. This causes two problems:"
+    hint "  1. steam:// URL handler from outside the sandbox often fails."
+    hint "     The launcher sends 'xdg-open steam://...' but Flatpak may not respond."
+    hint "  2. Process detection in /proc may work differently inside the sandbox."
+    hint ""
+    hint "FIX OPTION A (recommended): Install native Steam alongside Flatpak."
+    hint "  sudo apt install steam       (Mint/Ubuntu)"
+    hint "  sudo pacman -S steam         (Arch/CachyOS)"
+    hint "  Native Steam and Flatpak Steam coexist fine on the same machine."
+    hint ""
+    hint "FIX OPTION B: Launch the game INSIDE the Flatpak before running this script:"
+    hint "  flatpak run com.valvesoftware.Steam steam://rungameid/$STEAM_APPID"
+    hint "  Wait until the main menu appears, THEN run:  ./connect-aoe2.sh"
+    hint ""
+    hint "FIX OPTION C: Remove Flatpak Steam entirely and use native."
+  fi
+
+  if [ -n "$snap_steam" ]; then
+    hint ""
+    hint "Snap Steam also runs sandboxed. Same issues as Flatpak."
+    hint "Recommend removing Snap Steam and using native:"
+    hint "  sudo snap remove steam"
+    hint "  sudo apt install steam"
+  fi
+
+  echo
+
+  # Scan /proc for the expected game process
+  local expected="AoE2DE_s.exe"
+  info "Scanning /proc/*/cmdline for '$expected'..."
+  local matches=0
+  if [ -d /proc ] && [ -r /proc/1/cmdline ]; then
+    for pid_dir in /proc/[0-9]*/; do
+      local pid; pid=$(basename "$pid_dir")
+      local cmdline; cmdline=$(tr '\0' ' ' < "${pid_dir}cmdline" 2>/dev/null || true)
+      [ -z "$cmdline" ] && continue
+
+      # After \ → / conversion (matching what the agent does)
+      local cleaned; cleaned=$(echo "$cmdline" | tr '\\' '/')
+      # filepath.Base of first arg
+      local name; name=$(basename "$(echo "$cleaned" | awk '{print $1}')" 2>/dev/null || true)
+
+      if [ "$name" = "$expected" ]; then
+        matches=$((matches + 1))
+        ok "FOUND [$pid] ${cmdline:0:120}"
+      elif echo "$name" | grep -qi "aoe"; then
+        warn "Partial match [$pid] name='$name' (expected '$expected') — ${cmdline:0:100}"
+      fi
+    done
+  else
+    fail "Cannot read /proc — process detection will fail."
+  fi
+
+  if [ "$matches" -gt 0 ]; then
+    ok "Game process '$expected' is currently running. Agent should detect it."
+    ok "If the launcher still says 'Failed to find the game', the timing is off."
+    hint "Fix: launch AoE2 DE manually BEFORE running the launcher."
+  else
+    warn "Process '$expected' NOT found in /proc."
+    if [ -n "$flatpak_steam" ] || [ -n "$snap_steam" ]; then
+      hint "This is expected with sandboxed Steam. The sandbox may hide processes."
+      hint "Use native Steam to fix this."
+    else
+      hint "The game is not running (or started so recently /proc hasn't updated)."
+      hint ""
+      hint "MANUAL TEST: Open Steam and launch AoE2 DE to the main menu."
+      hint "Then run this diagnostic again:  ./connect-aoe2.sh --diagnose-game"
+      hint ""
+      hint "If the process STILL doesn't appear, check:"
+      hint "  1. 'pgrep -af AoE2DE || pgrep -af aoe' — does the process exist?"
+      hint "  2. 'cat /proc/PID/cmdline | tr '\\0' '\\n' | head -3' — what's the first line?"
+      hint "     If it shows 'wine64' or 'wine' instead of 'AoE2DE_s.exe', the agent"
+      hint "     won't detect it. This is a Wine/Proton version quirk."
+      hint "  3. Try Proton Experimental or Proton GE (different cmdline behavior)."
+    fi
+  fi
+
+  # Show relevant processes
+  echo
+  info "All processes matching 'aoe' or 'wine' (first 10):"
+  local count=0
+  for pid_dir in /proc/[0-9]*/; do
+    [ "$count" -ge 10 ] && break
+    local pid; pid=$(basename "$pid_dir")
+    local cmdline; cmdline=$(tr '\0' ' ' < "${pid_dir}cmdline" 2>/dev/null || true)
+    [ -z "$cmdline" ] && continue
+    local lc; lc=$(echo "$cmdline" | tr '[:upper:]' '[:lower:]')
+    if echo "$lc" | grep -qE 'aoe|wine(64|-preloader)?'; then
+      hint "  [$pid] ${cmdline:0:130}"
+      count=$((count + 1))
+    fi
+  done
+  [ "$count" -eq 0 ] && hint "  (none found)"
+
+  # Game path and Proton info
+  echo
+  game_path=$(find_game_path)
+  if [ -n "$game_path" ]; then
+    ok "Game path: $game_path"
+    local cacert="$game_path/certificates/cacert.pem"
+    if [ -f "$cacert" ]; then ok "cacert.pem exists"; else warn "cacert.pem MISSING"; fi
+  else
+    warn "Game path not found — is AoE2 DE installed?"
+  fi
+
+  echo
+  info "Diagnostic complete. Key takeaways:"
+  if [ -n "$flatpak_steam" ] || [ -n "$snap_steam" ]; then
+    warn "Sandboxed Steam detected. This is the most likely blocker."
+    hint "Install native Steam:  sudo apt install steam  (Mint/Ubuntu)"
+  elif [ "$matches" -eq 0 ]; then
+    warn "Game process not found. Launch AoE2 DE manually and re-run this diagnostic."
+  else
+    ok "Game detection looks healthy."
+  fi
+  echo
+  exit 0
+}
 check_certs() {
   info "Certificate store readiness"
   local game_path; game_path=$(find_game_path)
@@ -399,6 +543,8 @@ analyze_logs() {
     hint "  3. The xdg-open steam:// command succeeded but Steam ignored it."
     hint "     Fix: run 'xdg-open steam://rungameid/$STEAM_APPID' manually to test."
     hint "  4. Your user cannot read /proc/*/cmdline (unlikely; check 'cat /proc/1/cmdline')."
+    hint ""
+    hint "  Run this for a deep diagnostic:  ./connect-aoe2.sh --diagnose-game"
     echo
   fi
 
@@ -450,6 +596,10 @@ run_checks() {
 
 if [ "$FIX_CACERT" -eq 1 ]; then
   do_fix_cacert
+fi
+
+if [ "$DIAGNOSE_GAME" -eq 1 ]; then
+  do_diagnose_game
 fi
 
 run_checks
