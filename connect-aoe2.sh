@@ -55,6 +55,17 @@ for a in "$@"; do
   esac
 done
 
+# --- pretty output + pass/warn/fail tracking ---
+c_ok=$'\033[1;32m'; c_warn=$'\033[1;33m'; c_err=$'\033[1;31m'; c_dim=$'\033[2m'; c_cya=$'\033[1;36m'; c_off=$'\033[0m'
+WARNS=0; FAILS=0
+STEAM_URL_BROKEN=0
+info() { printf '%s==>%s %s\n' "$c_cya" "$c_off" "$*"; }
+ok()   { printf '  %s[ ok ]%s %s\n'   "$c_ok"   "$c_off" "$*"; }
+warn() { printf '  %s[warn]%s %s\n'   "$c_warn" "$c_off" "$*"; WARNS=$((WARNS+1)); }
+fail() { printf '  %s[FAIL]%s %s\n'   "$c_err"  "$c_off" "$*"; FAILS=$((FAILS+1)); }
+hint() { printf '         %s%s%s\n'   "$c_dim"  "$*" "$c_off"; }
+die()  { printf '%serror:%s %s\n' "$c_err" "$c_off" "$*" >&2; exit 1; }
+
 # --- Resolve domain to IP ---
 if ! echo "$SERVER_IP" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'; then
   RESOLVED=$(getent hosts "$SERVER_IP" 2>/dev/null | awk '{print $1; exit}' || true)
@@ -66,17 +77,6 @@ if ! echo "$SERVER_IP" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'; then
     exec "$0" $([ "$CHECK_ONLY" -eq 1 ] && echo "--check") $([ "$FIX_CACERT" -eq 1 ] && echo "--fix-cacert") $([ "$DIAGNOSE_GAME" -eq 1 ] && echo "--diagnose-game") "$RESOLVED"
   fi
 fi
-
-# --- pretty output + pass/warn/fail tracking ---
-c_ok=$'\033[1;32m'; c_warn=$'\033[1;33m'; c_err=$'\033[1;31m'; c_dim=$'\033[2m'; c_cya=$'\033[1;36m'; c_off=$'\033[0m'
-WARNS=0; FAILS=0
-STEAM_URL_BROKEN=0
-info() { printf '%s==>%s %s\n' "$c_cya" "$c_off" "$*"; }
-ok()   { printf '  %s[ ok ]%s %s\n'   "$c_ok"   "$c_off" "$*"; }
-warn() { printf '  %s[warn]%s %s\n'   "$c_warn" "$c_off" "$*"; WARNS=$((WARNS+1)); }
-fail() { printf '  %s[FAIL]%s %s\n'   "$c_err"  "$c_off" "$*"; FAILS=$((FAILS+1)); }
-hint() { printf '         %s%s%s\n'   "$c_dim"  "$*" "$c_off"; }
-die()  { printf '%serror:%s %s\n' "$c_err" "$c_off" "$*" >&2; exit 1; }
 
 # ---------------------------------------------------------------------------
 # Utilities
