@@ -2,6 +2,49 @@
 
 All commands must be run from the **repository root** (`ageLANServer/`).
 
+### Standalone single-image builds (fraguaAge)
+
+In addition to the compose-based setup below, this fork ships two **self-contained, zero-config** images, one per game. They bundle the certificate generator (and, for AoE4, the battle-server-manager and `BattleServer.exe`) so you can run a game server from a single `docker run` with no compose file and no arguments. Both are published to **GHCR**.
+
+| Image | Game | Contents | Published by | Networking |
+|---|---|---|---|---|
+| `ghcr.io/la-fragua/fraguaage-aoe2` | AoE II: DE | server + genCert | CI, on `v*.*.*` tags | bridge (published ports) |
+| `ghcr.io/la-fragua/fraguaage-aoe4` | AoE IV: AE | server + genCert + battle-server-manager (Wine) + BattleServer.exe | **locally**, by hand | **host (Linux only)** |
+
+#### AoE II: DE
+
+Public, reproducible, no secrets. Built and pushed by [`.github/workflows/docker.yml`](../../.github/workflows/docker.yml) using the built-in `GITHUB_TOKEN`. Run it with nothing to pass or mount:
+
+```sh
+docker run -d --name aoe2 \
+  -p 443:443/tcp -p 31978:31978/udp \
+  -v aoe2_certs:/app/server/resources/certificates \
+  ghcr.io/la-fragua/fraguaage-aoe2
+```
+A self-signed certificate is generated on first boot and persisted in the `certs` volume. (AoE II: DE on **macOS native** additionally needs a battle-server-manager, which this image does not include.)
+
+#### AoE IV: AE
+
+This image bakes in the game's proprietary `BattleServer.exe`, so it is **not** built by CI and **must not** be pushed to a public registry. Keep the GHCR package **private**. Build and push it from your own machine:
+
+```sh
+# 1. Log in to GHCR (token needs write:packages)
+echo "$GHCR_PAT" | docker login ghcr.io -u <github-username> --password-stdin
+
+# 2. Build with your BattleServer.exe baked in, and push
+tools/server-docker/build-push-aoe4-ghcr.sh /path/to/BattleServer.exe
+```
+`BattleServer.exe` does not ship with AoE IV: AE. Per [`server/BattleServers.md`](../../server/BattleServers.md), use the one from an **AoE II: DE** installation. The script stages it into the build context (it is gitignored and never committed) and removes it afterwards. Then run it on a Linux amd64 host:
+
+```sh
+docker run -d --name aoe4 --network host \
+  -v aoe4_certs:/app/server/resources/certificates \
+  ghcr.io/la-fragua/fraguaage-aoe4
+```
+Host networking is required by the AoE IV client and is Linux only.
+
+---
+
 ### Dockerfile
 
 | Image | Description |

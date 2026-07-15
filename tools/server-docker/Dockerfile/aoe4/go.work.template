@@ -1,0 +1,11 @@
+go 1.26.0
+
+toolchain go1.26.5
+
+use (
+	common
+	battle-server-broadcast
+	server
+	server-genCert
+	battle-server-manager
+)

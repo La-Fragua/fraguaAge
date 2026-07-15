@@ -1,0 +1,63 @@
+name: docker
+
+# Builds and publishes the public AoE II: DE LAN server image to GHCR:
+#   ghcr.io/<owner>/fraguaage-aoe2
+#
+# The AoE IV: AE image is NOT built here: it bakes in the game's proprietary
+# BattleServer.exe, which must stay out of the public repo and out of CI. Build
+# and push it locally with tools/server-docker/build-push-aoe4-ghcr.sh instead.
+#
+# No repository secrets are required: authentication uses the built-in
+# GITHUB_TOKEN with packages:write.
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  aoe2:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/fraguaage-aoe2
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push aoe2
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: tools/server-docker/Dockerfile/aoe2/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

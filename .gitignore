@@ -14,3 +14,6 @@ build/**/*
 .goreleaser.yaml
 tools/**/go.sum
 go.work.sum
+
+# Proprietary AoE IV binary baked into the local-only aoe4 image. Never commit.
+tools/server-docker/Dockerfile/aoe4/BattleServer.exe
