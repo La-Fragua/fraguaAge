@@ -55,6 +55,18 @@ for a in "$@"; do
   esac
 done
 
+# --- Resolve domain to IP ---
+if ! echo "$SERVER_IP" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'; then
+  RESOLVED=$(getent hosts "$SERVER_IP" 2>/dev/null | awk '{print $1; exit}' || true)
+  if [ -z "$RESOLVED" ]; then
+    RESOLVED=$(dig +short "$SERVER_IP" 2>/dev/null | head -1 || true)
+  fi
+  if [ -n "$RESOLVED" ]; then
+    info "Resolved $SERVER_IP → $RESOLVED, re-running with IP..."
+    exec "$0" $([ "$CHECK_ONLY" -eq 1 ] && echo "--check") $([ "$FIX_CACERT" -eq 1 ] && echo "--fix-cacert") $([ "$DIAGNOSE_GAME" -eq 1 ] && echo "--diagnose-game") "$RESOLVED"
+  fi
+fi
+
 # --- pretty output + pass/warn/fail tracking ---
 c_ok=$'\033[1;32m'; c_warn=$'\033[1;33m'; c_err=$'\033[1;31m'; c_dim=$'\033[2m'; c_cya=$'\033[1;36m'; c_off=$'\033[0m'
 WARNS=0; FAILS=0
