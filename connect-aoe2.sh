@@ -58,6 +58,7 @@ done
 # --- pretty output + pass/warn/fail tracking ---
 c_ok=$'\033[1;32m'; c_warn=$'\033[1;33m'; c_err=$'\033[1;31m'; c_dim=$'\033[2m'; c_cya=$'\033[1;36m'; c_off=$'\033[0m'
 WARNS=0; FAILS=0
+STEAM_URL_BROKEN=0
 info() { printf '%s==>%s %s\n' "$c_cya" "$c_off" "$*"; }
 ok()   { printf '  %s[ ok ]%s %s\n'   "$c_ok"   "$c_off" "$*"; }
 warn() { printf '  %s[warn]%s %s\n'   "$c_warn" "$c_off" "$*"; WARNS=$((WARNS+1)); }
@@ -225,6 +226,7 @@ check_steam() {
       ok "steam:// URL handler test OK (Steam responded)"
     else
       warn "steam:// URL handler did not respond in time; the game launch may hang silently."
+      STEAM_URL_BROKEN=1
       hint "Try running manually:  xdg-open steam://rungameid/$STEAM_APPID"
       hint "If that does nothing, reinstall Steam or fix the MIME handler."
     fi
@@ -615,18 +617,33 @@ fi
 
 get_launcher
 
-# --- Patch launcher config: prefer native steam over xdg-open ---
-STEAM_CONFIG="$LAUNCHER_DIR/resources/config.age2.toml"
-if [ -f "$STEAM_CONFIG" ] && command -v steam >/dev/null 2>&1; then
-  # Change Client.Executable from 'auto' to 'steam' — this makes the
-  # launcher call the Steam binary directly instead of xdg-open which
-  # silently fails on some systems (especially with Steam Flatpak/Snap
-  # or broken MIME handlers on Mint/Ubuntu).
-  if grep -q "^Executable = 'auto'$" "$STEAM_CONFIG"; then
-    info "Patching launcher config to use native Steam (not xdg-open)..."
+# --- Patch launcher config when steam:// handler is broken ---
+# The launcher uses xdg-open for BOTH 'auto' and 'steam' on Linux (see
+# base/base_linux.go StartUri). When xdg-open silently fails (common on
+# Mint/Ubuntu), we create a wrapper that calls Steam's binary directly.
+if [ "$STEAM_URL_BROKEN" -eq 1 ] && command -v steam >/dev/null 2>&1; then
+  STEAM_CONFIG="$LAUNCHER_DIR/resources/config.age2.toml"
+  if [ -f "$STEAM_CONFIG" ] && grep -qE "^Executable *= *'(auto|steam)'$" "$STEAM_CONFIG"; then
+    info "steam:// handler is broken, switching to direct Steam launch..."
+    STEAM_BIN=$(command -v steam)
+    STEAM_WRAPPER="$LAUNCHER_DIR/steam-launcher.sh"
+
+    cat > "$STEAM_WRAPPER" <<SCRIPTEOF
+#!/bin/bash
+# Wrapper created by connect-aoe2.sh — launches AoE2 DE via
+# native Steam binary instead of xdg-open steam:// (which
+# silently fails on this system).
+exec "$STEAM_BIN" -applaunch $STEAM_APPID
+SCRIPTEOF
+    chmod +x "$STEAM_WRAPPER"
+
     cp "$STEAM_CONFIG" "$STEAM_CONFIG.bak"
-    sed -i '/^\[Client\]$/,/^\[/{s/^Executable = '\''auto'\''$/Executable = '\''steam'\''/}' "$STEAM_CONFIG"
-    ok "Config patched: Client.Executable = 'steam'"
+    sed -i "/^\[Client\]\$/,/^\[/{
+      s|^Executable = .*|Executable = '$STEAM_WRAPPER'|
+      s|^ExecutableArgs *= *\[.*\]\$|ExecutableArgs = []|
+    }" "$STEAM_CONFIG"
+    ok "Config patched: Client.Executable = steam-launcher.sh"
+    hint "This wrapper runs: $STEAM_BIN -applaunch $STEAM_APPID"
   fi
 fi
 
