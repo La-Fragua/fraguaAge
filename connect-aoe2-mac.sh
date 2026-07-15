@@ -180,6 +180,21 @@ check_game() {
     warn "cacert.pem not found at $GAME_CERT_DIR"
     hint "Launch AoE2 DE from Steam at least once to create it."
   fi
+
+  # Upstream bug: NativeMacOsGame() does executer.(steam.Exec) but the
+  # actual type is *steam.Exec (pointer). This causes the launcher to
+  # look for cacert.pem at .../AoE2DE/certificates/ instead of
+  # .../AoE2DE/AgeOfEmpires2Data/certificates/. Work around by copying.
+  local legacy_cert_dir="$GAME_BASE/certificates"
+  if [ -f "$GAME_CERT_DIR/cacert.pem" ] && [ ! -f "$legacy_cert_dir/cacert.pem" ]; then
+    warn "Known upstream bug: launcher looks for cacert.pem in wrong path."
+    hint "Creating workaround copy at: $legacy_cert_dir"
+    mkdir -p "$legacy_cert_dir"
+    cp "$GAME_CERT_DIR/cacert.pem" "$legacy_cert_dir/cacert.pem"
+    ok "Copy created: launcher can now find cacert.pem"
+  elif [ -f "$legacy_cert_dir/cacert.pem" ]; then
+    ok "Workaround cacert.pem already present at legacy path"
+  fi
   hint "Agent watches for process: 'Age Of Empires II' (native macOS)"
 }
 
@@ -241,6 +256,12 @@ do_fix_cacert() {
 
   openssl crl2pkcs7 -nocrl -certfile "$cacert" 2>/dev/null | openssl pkcs7 -print_certs -text -noout >/dev/null 2>&1 && \
     ok "cacert.pem is valid after update" || { warn "Validation failed; restoring backup"; mv "$GAME_CERT_DIR/cacert.pem.bak" "$cacert"; die "Manual cert injection failed."; }
+
+  # Also copy to legacy path (upstream pointer-value type assertion bug)
+  local legacy="$GAME_BASE/certificates/cacert.pem"
+  mkdir -p "$(dirname "$legacy")"
+  cp "$cacert" "$legacy"
+  ok "Also copied to: $legacy"
 
   ok "Done. Run ./connect-aoe2-mac.sh normally."
   exit 0
