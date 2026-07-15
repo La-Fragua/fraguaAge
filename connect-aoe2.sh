@@ -651,7 +651,7 @@ if [ "$STEAM_URL_BROKEN" -eq 1 ] && command -v steam >/dev/null 2>&1; then
 # native Steam binary instead of xdg-open steam:// (which
 # silently fails on this system because gio/gvfs doesn't
 # support the steam:// URI scheme).
-exec "$STEAM_BIN" -applaunch $STEAM_APPID
+exec "$STEAM_BIN" "steam://rungameid/$STEAM_APPID"
 SCRIPTEOF
       chmod +x "$STEAM_WRAPPER"
 
@@ -671,7 +671,7 @@ SCRIPTEOF
         }" "$STEAM_CONFIG"
         ok "Config patched: Executable=wrapper (Path not set — game not found)"
       fi
-      hint "This wrapper runs: $STEAM_BIN -applaunch $STEAM_APPID"
+      hint "This wrapper runs: $STEAM_BIN steam://rungameid/$STEAM_APPID"
     fi
   fi
 fi
