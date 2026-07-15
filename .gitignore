@@ -17,3 +17,5 @@ go.work.sum
 
 # Proprietary AoE IV binary baked into the local-only aoe4 image. Never commit.
 tools/server-docker/Dockerfile/aoe4/BattleServer.exe
+# Proprietary AoE BattleServer baked into the local-only full image. Never commit.
+tools/server-docker/Dockerfile/full/BattleServer.exe
