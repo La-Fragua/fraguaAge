@@ -674,7 +674,7 @@ info "A password prompt may appear (to edit hosts + trust the certificate)."
 cd "$LAUNCHER_DIR"
 
 set +e
-./launcher -e "$GAME" -s "$SERVER_IP" --log
+./launcher -e "$GAME" -s "$SERVER_IP" -a false --log
 rc=$?
 set -e
 
