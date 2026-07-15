@@ -61,7 +61,11 @@ die()  { printf '%serror:%s %s\n' "$c_err" "$c_off" "$*" >&2; exit 1; }
 # ---------------------------------------------------------------------------
 # Utilities
 # ---------------------------------------------------------------------------
-tcp_open() { timeout 5 bash -c ":</dev/tcp/$1/$2" >/dev/null 2>&1; }
+# macOS has no `timeout`; use BSD nc (-G connect timeout), fall back to curl.
+tcp_open() {
+  if command -v nc >/dev/null 2>&1; then nc -z -G 5 "$1" "$2" >/dev/null 2>&1
+  else curl -sk --connect-timeout 5 -o /dev/null "https://$1:$2/test" 2>/dev/null; fi
+}
 
 lan_subnet() {
   local ip
