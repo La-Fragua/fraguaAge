@@ -5,7 +5,8 @@
 # This image contains proprietary game content. Keep the GHCR package PRIVATE.
 #
 # Prerequisites:
-#   1. A copy of BattleServer.exe from your AoE IV installation.
+#   1. A copy of BattleServer.exe. AoE IV: AE does not ship one; use the
+#      BattleServer.exe from an AoE II: DE installation (see server/BattleServers.md).
 #   2. Logged in to GHCR with a token that has write:packages, e.g.:
 #        echo "$GHCR_PAT" | docker login ghcr.io -u <github-username> --password-stdin
 #

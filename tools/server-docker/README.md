@@ -34,7 +34,7 @@ echo "$GHCR_PAT" | docker login ghcr.io -u <github-username> --password-stdin
 # 2. Build with your BattleServer.exe baked in, and push
 tools/server-docker/build-push-aoe4-ghcr.sh /path/to/BattleServer.exe
 ```
-`BattleServer.exe` comes from your own AoE IV installation. The script stages it into the build context (it is gitignored and never committed) and removes it afterwards. Then run it on a Linux amd64 host:
+`BattleServer.exe` does not ship with AoE IV: AE. Per [`server/BattleServers.md`](../../server/BattleServers.md), use the one from an **AoE II: DE** installation. The script stages it into the build context (it is gitignored and never committed) and removes it afterwards. Then run it on a Linux amd64 host:
 
 ```sh
 docker run -d --name aoe4 --network host \
